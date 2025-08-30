@@ -255,6 +255,7 @@ M.state = {
   config = nil,
 
   ns_id = nil,
+  resize_autocmd_id = nil,
 
   last_status_info = nil,
 
@@ -263,6 +264,114 @@ M.state = {
 
   last_preview_file = nil,
 }
+
+--- Handle window resize by updating all window positions and sizes
+function M.resize_windows()
+  if not M.state.active then return end
+
+  local config = M.state.config
+  local debug_enabled_in_preview = M.enabled_preview() and config and config.debug and config.debug.show_scores
+
+  -- Recalculate dimensions with current terminal size
+  local terminal_width = vim.o.columns
+  local terminal_height = vim.o.lines
+
+  local width_ratio = utils.resolve_config_value(
+    config.layout.width,
+    terminal_width,
+    terminal_height,
+    utils.is_valid_ratio,
+    0.8,
+    'layout.width'
+  )
+  local height_ratio = utils.resolve_config_value(
+    config.layout.height,
+    terminal_width,
+    terminal_height,
+    utils.is_valid_ratio,
+    0.8,
+    'layout.height'
+  )
+
+  local width = math.floor(terminal_width * width_ratio)
+  local height = math.floor(terminal_height * height_ratio)
+  local col = math.floor((vim.o.columns - width) / 2)
+  local row = math.floor((vim.o.lines - height) / 2)
+
+  local prompt_position = get_prompt_position()
+  local preview_position = get_preview_position()
+
+  local preview_size_ratio = utils.resolve_config_value(
+    config.layout.preview_size,
+    terminal_width,
+    terminal_height,
+    utils.is_valid_ratio,
+    0.4,
+    'layout.preview_size'
+  )
+
+  local layout_config = {
+    total_width = width,
+    total_height = height,
+    start_col = col,
+    start_row = row,
+    preview_position = preview_position,
+    prompt_position = prompt_position,
+    debug_enabled = debug_enabled_in_preview,
+    preview_width = M.enabled_preview() and math.floor(width * preview_size_ratio) or 0,
+    preview_height = M.enabled_preview() and math.floor(height * preview_size_ratio) or 0,
+    separator_width = 3,
+    file_info_height = debug_enabled_in_preview and 10 or 0,
+  }
+
+  local layout = M.calculate_layout_dimensions(layout_config)
+
+  -- Update all windows with new layout
+  if M.state.list_win and vim.api.nvim_win_is_valid(M.state.list_win) then
+    vim.api.nvim_win_set_config(M.state.list_win, {
+      relative = 'editor',
+      width = layout.list_width,
+      height = layout.list_height,
+      col = layout.list_col,
+      row = layout.list_row,
+    })
+  end
+
+  if M.state.input_win and vim.api.nvim_win_is_valid(M.state.input_win) then
+    vim.api.nvim_win_set_config(M.state.input_win, {
+      relative = 'editor',
+      width = layout.input_width,
+      height = 1,
+      col = layout.input_col,
+      row = layout.input_row,
+    })
+  end
+
+  if M.state.preview_win and vim.api.nvim_win_is_valid(M.state.preview_win) and layout.preview then
+    vim.api.nvim_win_set_config(M.state.preview_win, {
+      relative = 'editor',
+      width = layout.preview.width,
+      height = layout.preview.height,
+      col = layout.preview.col,
+      row = layout.preview.row,
+    })
+  end
+
+  if M.state.file_info_win and vim.api.nvim_win_is_valid(M.state.file_info_win) and layout.file_info then
+    vim.api.nvim_win_set_config(M.state.file_info_win, {
+      relative = 'editor',
+      width = layout.file_info.width,
+      height = layout.file_info.height,
+      col = layout.file_info.col,
+      row = layout.file_info.row,
+    })
+  end
+
+  -- Re-render with updated window sizes
+  M.render_list()
+  M.update_preview()
+  M.update_status()
+end
 
 function M.create_ui()
   local config = M.state.config
@@ -488,6 +597,19 @@ function M.setup_windows()
     vim.api.nvim_win_set_option(M.state.preview_win, 'relativenumber', false)
     vim.api.nvim_win_set_option(M.state.preview_win, 'signcolumn', 'no')
     vim.api.nvim_win_set_option(M.state.preview_win, 'foldcolumn', '0')
+  end
+
+  -- Set up autocmd to handle window resizing (e.g., tmux pane switching)
+  if not M.state.resize_autocmd_id then
+    M.state.resize_autocmd_id = vim.api.nvim_create_autocmd('VimResized', {
+      callback = function()
+        if M.state.active then
+          -- Use vim.schedule to ensure resize happens after all events are processed
+          vim.schedule(function() M.resize_windows() end)
+        end
+      end,
+      desc = 'FFF resize windows on terminal size change',
+    })
   end
 end
 
@@ -1237,6 +1359,12 @@ function M.close()
     M.state.search_timer:stop()
     M.state.search_timer:close()
     M.state.search_timer = nil
+  end
+
+  -- Clean up resize autocmd
+  if M.state.resize_autocmd_id then
+    vim.api.nvim_del_autocmd(M.state.resize_autocmd_id)
+    M.state.resize_autocmd_id = nil
   end
 end
 

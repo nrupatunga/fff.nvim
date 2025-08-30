@@ -206,4 +206,14 @@ function M.change_indexing_directory(new_path)
   return true
 end
 
+--- Manually resize the file picker windows (useful for tmux pane switching)
+function M.resize_picker()
+  local picker_ok, picker_ui = pcall(require, 'fff.picker_ui')
+  if picker_ok and picker_ui.state.active then
+    picker_ui.resize_windows()
+  else
+    vim.notify('File picker is not currently open', vim.log.levels.WARN)
+  end
+end
+
 return M

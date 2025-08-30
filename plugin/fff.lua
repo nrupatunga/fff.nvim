@@ -102,3 +102,7 @@ vim.api.nvim_create_user_command('FFFOpenLog', function()
 end, {
   desc = 'Open FFF log file in new tab',
 })
+
+vim.api.nvim_create_user_command('FFFResize', function() require('fff').resize_picker() end, {
+  desc = 'Manually resize FFF windows (useful for tmux pane switching)',
+})
