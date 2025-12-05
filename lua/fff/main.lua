@@ -214,6 +214,7 @@ function M.resize_picker()
   else
     vim.notify('File picker is not currently open', vim.log.levels.WARN)
   end
+end
 --- Opens the file under the cursor with an optional callback if the only file
 --- is found and we are about to inline open it
 --- @param open_cb function|nil Optional callback function to execute after opening the file
