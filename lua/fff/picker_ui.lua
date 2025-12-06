@@ -261,11 +261,11 @@ M.state = {
 
   last_status_info = nil,
 
-  search_timer = nil,
-  search_debounce_ms = 50, -- Debounce delay for search
-
   last_preview_file = nil,
   last_preview_location = nil, -- Track last preview location to detect changes
+
+  preview_timer = nil, -- Separate timer for preview updates
+  preview_debounce_ms = 100, -- Preview is more expensive, debounce more
 }
 
 --- Handle window resize by updating all window positions and sizes
@@ -858,12 +858,6 @@ function M.on_input_change()
 
   M.state.query = query
 
-  if M.state.search_timer then
-    M.state.search_timer:stop()
-    M.state.search_timer:close()
-    M.state.search_timer = nil
-  end
-
   M.update_results_sync()
 end
 
@@ -914,6 +908,28 @@ function M.update_results_sync()
   end
 
   M.render_debounced()
+end
+
+function M.update_preview_debounced()
+  -- Cancel previous preview timer
+  if M.state.preview_timer then
+    M.state.preview_timer:stop()
+    M.state.preview_timer:close()
+    M.state.preview_timer = nil
+  end
+
+  -- Create new timer with longer debounce for expensive preview
+  M.state.preview_timer = vim.loop.new_timer()
+  M.state.preview_timer:start(
+    M.state.preview_debounce_ms,
+    0,
+    vim.schedule_wrap(function()
+      if M.state.active then
+        M.update_preview()
+        M.state.preview_timer = nil
+      end
+    end)
+  )
 end
 
 function M.render_debounced()
@@ -1503,6 +1519,12 @@ function M.close()
     end
   end
 
+  if M.state.preview_timer then
+    M.state.preview_timer:stop()
+    M.state.preview_timer:close()
+    M.state.preview_timer = nil
+  end
+
   M.state.input_win = nil
   M.state.list_win = nil
   M.state.file_info_win = nil
@@ -1520,12 +1542,6 @@ function M.close()
   M.state.last_preview_location = nil
   M.state.current_file_cache = nil
   M.state.location = nil
-
-  if M.state.search_timer then
-    M.state.search_timer:stop()
-    M.state.search_timer:close()
-    M.state.search_timer = nil
-  end
 
   -- Clean up picker focus autocmds
   pcall(vim.api.nvim_del_augroup_by_name, 'fff_picker_focus')
